@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-프로젝트 문서 자동 생성 스크립트 (v4)
+프로젝트 문서 자동 생성 스크립트 (v5)
 
 기능:
 - 커맨드 라인 인자(argument)로 대상 프로젝트의 루트 디렉토리 경로를 받습니다.
@@ -9,9 +9,9 @@
 - 문서 상단에 클릭 가능한 목차(Table of Contents)를 추가합니다.
 - 최종 결과를 WeasyPrint를 사용하여 하나의 PDF 파일로 만듭니다.
 
-수정사항 (v4):
-- PDF 출력 스타일(CSS)을 개선하여 가독성을 높였습니다.
-- 기본 폰트 크기를 줄이고, 긴 코드 라인이 페이지를 벗어나지 않도록 자동 줄바꿈 처리를 강화했습니다.
+수정사항 (v5):
+- AI의 문서 분석 용이성을 위해 코드 블록의 줄 번호를 제거했습니다.
+- 줄 번호 제거에 맞춰 불필요한 CSS 스타일을 정리하고, 코드 블록 디자인을 개선했습니다.
 
 사용법:
 1. 'config.json'과 'requirements.txt' 파일이 있는지 확인합니다.
@@ -113,8 +113,9 @@ def main():
     # 4. HTML 콘텐츠 및 목차 생성
     html_parts = []
     toc_items = []
+    # 줄 번호 옵션(linenos)을 제거
     formatter = HtmlFormatter(
-        style=PYGMENTS_STYLE, full=True, cssclass="highlight", linenos="inline"
+        style=PYGMENTS_STYLE, full=True, cssclass="highlight"
     )
 
     for i, file_path in enumerate(target_files):
@@ -189,26 +190,13 @@ def main():
     /* --- 파일 컨테이너 스타일 --- */
     .file-container {{ page-break-before: auto; }}
 
-    /* --- 코드 하이라이팅 블록 스타일 (가독성 개선의 핵심) --- */
+    /* --- 코드 하이라이팅 블록 스타일 (줄 번호 제거 후 재구성) --- */
     .highlight pre {{
         white-space: pre-wrap !important;  /* 자동 줄바꿈을 허용하여 내용이 페이지를 벗어나지 않도록 함 */
         word-wrap: break-word;         /* 긴 단어나 URL을 강제로 줄바꿈 처리 */
         font-size: 8.5pt;              /* 코드 폰트 크기를 본문보다 약간 작게 설정 */
-    }}
-    .highlight table {{
-        width: 100% !important;
-        border-collapse: collapse;
-        table-layout: fixed; /* 테이블 레이아웃을 고정하여 너비 문제 방지 */
-    }}
-    .highlight .linenos {{
-        color: #999;
-        padding-right: 10px;
-        user-select: none; /* 줄 번호는 선택되지 않도록 처리 */
-        width: 35px; /* 줄 번호 컬럼의 너비를 고정 */
-        text-align: right;
-    }}
-    .highlight .code {{
-        width: calc(100% - 40px); /* 코드 컬럼이 남은 공간을 모두 사용하도록 계산 */
+        padding: 12px !important;      /* pre 태그에 직접 패딩을 적용 */
+        border-radius: 4px;            /* 모서리를 부드럽게 처리 */
     }}
     """
     
