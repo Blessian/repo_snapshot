@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-프로젝트 문서 자동 생성 스크립트 (v5)
+프로젝트 문서 자동 생성 스크립트 (v6)
 
 기능:
 - 커맨드 라인 인자(argument)로 대상 프로젝트의 루트 디렉토리 경로를 받습니다.
@@ -9,9 +9,9 @@
 - 문서 상단에 클릭 가능한 목차(Table of Contents)를 추가합니다.
 - 최종 결과를 WeasyPrint를 사용하여 하나의 PDF 파일로 만듭니다.
 
-수정사항 (v5):
-- AI의 문서 분석 용이성을 위해 코드 블록의 줄 번호를 제거했습니다.
-- 줄 번호 제거에 맞춰 불필요한 CSS 스타일을 정리하고, 코드 블록 디자인을 개선했습니다.
+수정사항 (v6):
+- 제외 목록(exclude_dirs, exclude_files) 처리에 와일드카드(*, ?) 패턴 매칭을 적용했습니다.
+- 이제 .gitignore 처럼 '*.log', 'build*' 와 같은 패턴으로 유연하게 필터링할 수 있습니다.
 
 사용법:
 1. 'config.json'과 'requirements.txt' 파일이 있는지 확인합니다.
@@ -21,12 +21,13 @@
 """
 
 # --- 종속성 임포트 ---
-# 내장 모듈
+# 표준 라이브러리 (Standard Library)
 import argparse
+import fnmatch
 import json
 from pathlib import Path
 
-# 라이브러리 모듈
+# 서드파티 라이브러리 (Third-party Library)
 from pygments import highlight
 from pygments.lexers import get_lexer_for_filename, TextLexer
 from pygments.formatters import HtmlFormatter
@@ -47,22 +48,38 @@ except json.JSONDecodeError:
 # 설정 값들을 변수로 할당합니다.
 OUTPUT_PDF_NAME = config.get("output_pdf_name", "project_documentation.pdf")
 PYGMENTS_STYLE = config.get("pygments_style", "default")
-EXCLUDE_DIRS = set(config.get("exclude_dirs", []))
-EXCLUDE_FILES = set(config.get("exclude_files", []))
+# 리스트 형태 그대로 가져옵니다 (패턴 매칭을 위해 set으로 변환하지 않음)
+EXCLUDE_DIRS = config.get("exclude_dirs", [])
+EXCLUDE_FILES = config.get("exclude_files", [])
 
 
 def is_excluded(path: Path, root_path: Path) -> bool:
     """
-    주어진 경로가 제외 목록에 포함되는지 확인합니다.
-    경로는 root_path에 대한 상대 경로를 기준으로 검사합니다.
+    주어진 경로가 제외 패턴에 포함되는지 fnmatch를 사용하여 확인합니다.
+    - 파일명: exclude_files의 와일드카드 패턴과 매칭되는지 확인
+    - 디렉토리: 경로 상의 어떤 디렉토리라도 exclude_dirs 패턴과 매칭되는지 확인
     """
-    if path.name in EXCLUDE_FILES:
+    # 1. 파일 이름 패턴 검사 (예: *.log, secret.*)
+    # 현재 파일의 이름이 exclude_files의 패턴 중 하나라도 일치하면 제외
+    if any(fnmatch.fnmatch(path.name, pattern) for pattern in EXCLUDE_FILES):
         return True
+
+    # 2. 디렉토리 패턴 검사 (예: build*, temp_*)
+    # 루트 경로를 기준으로 상대 경로를 구합니다.
     try:
-        relative_parts = path.relative_to(root_path).parts
-        return any(part in EXCLUDE_DIRS for part in relative_parts)
+        relative_path = path.relative_to(root_path)
     except ValueError:
+        # 경로가 root_path 내부에 있지 않은 경우 (안전 장치)
         return True
+
+    # 상대 경로의 상위 디렉토리 부분들을 순회하며 패턴 검사
+    # 예: src/build_temp/main.c -> parts는 ('src', 'build_temp', 'main.c')
+    # 파일명인 마지막 요소를 제외한 앞부분(디렉토리들)만 검사합니다.
+    for part in relative_path.parent.parts:
+        if any(fnmatch.fnmatch(part, pattern) for pattern in EXCLUDE_DIRS):
+            return True
+
+    return False
 
 
 def is_binary(path: Path) -> bool:
@@ -105,6 +122,7 @@ def main():
 
     # 3. 모든 파일 탐색 및 필터링
     all_files = [p for p in project_path.rglob("*") if p.is_file()]
+    # is_excluded 함수 내부 로직 변경으로 인해 와일드카드 필터링이 적용됩니다.
     target_files = [
         p for p in all_files if not is_excluded(p, project_path) and not is_binary(p)
     ]
@@ -113,7 +131,7 @@ def main():
     # 4. HTML 콘텐츠 및 목차 생성
     html_parts = []
     toc_items = []
-    # 줄 번호 옵션(linenos)을 제거
+    # 줄 번호 옵션 제거 유지 (AI 분석 용이성)
     formatter = HtmlFormatter(
         style=PYGMENTS_STYLE, full=True, cssclass="highlight"
     )
@@ -146,7 +164,7 @@ def main():
 
     # 5. 목차(TOC) HTML 생성
     toc_html_list = [
-        f'<li><a href="#{anchor}">{path_str}</a></li>'
+        f"<li><a href=\"#{anchor}\">{path_str}</a></li>"
         for path_str, anchor in toc_items
     ]
     toc_html = f"""
@@ -159,13 +177,13 @@ def main():
     </div>
     """
 
-    # 6. 전체 HTML 문서 조합 (스타일 개선)
+    # 6. 전체 HTML 문서 조합 (개선된 CSS 스타일 적용 유지)
     final_css = f"""
     {formatter.get_style_defs()}
     /* --- 기본 및 타이포그래피 설정 --- */
     body {{
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-        font-size: 9pt; /* 기본 폰트 크기를 줄여 더 많은 내용을 담도록 조정 */
+        font-size: 9pt;
         line-height: 1.4;
     }}
     h1, h2 {{
@@ -181,7 +199,7 @@ def main():
         border-bottom: 2px solid #ccc;
         padding-bottom: 20px;
         margin-bottom: 20px;
-        page-break-after: always; /* 목차 다음에 항상 페이지를 넘김 */
+        page-break-after: always;
     }}
     .toc ul {{ list-style-type: none; padding-left: 0; }}
     .toc a {{ text-decoration: none; color: #007bff; }}
@@ -190,16 +208,16 @@ def main():
     /* --- 파일 컨테이너 스타일 --- */
     .file-container {{ page-break-before: auto; }}
 
-    /* --- 코드 하이라이팅 블록 스타일 (줄 번호 제거 후 재구성) --- */
+    /* --- 코드 하이라이팅 블록 스타일 --- */
     .highlight pre {{
-        white-space: pre-wrap !important;  /* 자동 줄바꿈을 허용하여 내용이 페이지를 벗어나지 않도록 함 */
-        word-wrap: break-word;         /* 긴 단어나 URL을 강제로 줄바꿈 처리 */
-        font-size: 8.5pt;              /* 코드 폰트 크기를 본문보다 약간 작게 설정 */
-        padding: 12px !important;      /* pre 태그에 직접 패딩을 적용 */
-        border-radius: 4px;            /* 모서리를 부드럽게 처리 */
+        white-space: pre-wrap !important;
+        word-wrap: break-word;
+        font-size: 8.5pt;
+        padding: 12px !important;
+        border-radius: 4px;
     }}
     """
-    
+
     full_html = f"""
     <!DOCTYPE html>
     <html>
